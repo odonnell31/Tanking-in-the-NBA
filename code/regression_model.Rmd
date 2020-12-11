@@ -1,0 +1,120 @@
+---
+title: "DATA621 Final Project, Does Tanking Work in the NBA?"
+author: "Michael O'Donnell"
+date: "December 8, 2020"
+output: html_document
+---
+
+## Load data and required libraries
+
+```{r load_packages echo=FALSE}
+# load required packages
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+library(MASS)
+library(caret)
+library(haven)
+library(QuantPsyc)
+```
+
+```{r import}
+# Loading the data
+git_dir <- 'https://raw.githubusercontent.com/odonnell31/NBA-Team-Strategies/main/data'
+df = read.csv(paste(git_dir, "/nba_teams_data_1990_2020.csv", sep=""))
+```
+
+## Exploratory data analysis
+
+See a summary of each variable
+```{r}
+summary(df)
+```
+
+Look at histograms of important predictors
+```{r}
+# setup 4 plots
+par(mfrow=c(2,2))
+
+# plot a histogram for each of the predictor variables
+hist(df$consecutive_losing_seasons, main = "Consecutive Losing Seasons")
+hist(df$consecutive_playoff_seasons, main = "Consecutive Playoff Seasons")
+hist(df$years_since_losing_season, main = "Years Since Last Losing Season")
+hist(df$length_of_last_tank, main = "Length of Last Tank (in Seasons)")
+
+```
+
+Subset the data for only possible predictors and response
+```{r}
+keep_vars <- c("Year", "Team", "Playoffs",
+            "Losing_season", "Finals_Team",
+            "consecutive_losing_seasons", "consecutive_playoff_seasons",
+            "years_since_losing_season", "length_of_last_tank")
+df <- df[keep_vars]
+```
+
+Check for NA's
+```{r}
+has_NA = names(which(sapply(df, anyNA)))
+has_NA
+```
+
+Explore correlations among important predictors
+```{r}
+# look at correlations 
+corr_vars = c("Finals_Team","consecutive_playoff_seasons",
+            "years_since_losing_season", "length_of_last_tank")
+cor_train = cor(df[corr_vars],  use = "na.or.complete")
+corrplot(cor_train)
+```
+
+## Creating Regression Model
+
+Create a binary logicstic regression model with Finals_Team as the response
+```{r}
+# create Binary Logistic Regression model
+finals_logistic_model <- glm(Finals_Team ~ consecutive_playoff_seasons +
+                              length_of_last_tank +
+                              years_since_losing_season,
+                              data = df, family = binomial())
+
+summary(finals_logistic_model)
+```
+
+Calculate Odd Ratios based on Regression Coefficients
+```{r}
+#Logistic Regression Coefficient
+finals_summary.coeff0 = summary(finals_logistic_model)$coefficient
+
+#Calculating Odd Ratios
+FinalsOddRatio = exp(coef(finals_logistic_model))
+finals_summary.coeff = cbind(Variable = row.names(finals_summary.coeff0), FinalsOddRatio, finals_summary.coeff0)
+row.names(finals_summary.coeff0) = NULL
+```
+
+Create a function to standardize the regression coefficients
+```{r}
+# function to standardize regression coefficients
+standardize_coefficients <- function (bl_model) 
+{ b <- summary(bl_model)$coef[-1,1]
+  sx <- sapply(bl_model$model[-1], sd)
+  beta <-(3^(1/2))/pi * sx * b
+  return(beta)
+}
+```
+
+Create standardized regression coefficients with new function
+```{r}
+# use above function to standardize regression coefficients from model
+std_Coeff = data.frame(Standardized.Coeff = standardize_coefficients(finals_logistic_model))
+std_Coeff = cbind(Variable = row.names(std_Coeff), std_Coeff)
+row.names(std_Coeff) = NULL
+```
+
+Merge the Odds Ratios and Coefficients to see all results
+```{r}
+#Final Summary Report
+final_report = merge(finals_summary.coeff, std_Coeff, by = "Variable", all.x = TRUE)
+
+final_report
+```
